@@ -132,6 +132,22 @@ def _compute_risk(findings: list[MCPFinding]) -> tuple[float, str]:
     return score, "LOW"
 
 
+def _parse_jsonl_tools(text: str) -> list[dict[str, Any]]:
+    """Parse a JSONL tool listing: one tool object per non-empty line."""
+    tools = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            tool = json.loads(line)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSONL parse error on line {lineno}: {e.msg}") from e
+        if not isinstance(tool, dict):
+            raise ValueError(f"JSONL parse error on line {lineno}: expected a tool object")
+        tools.append(tool)
+    return tools
+
+
 class MCPScanner:
     """
     Scan MCP server manifests for security vulnerabilities.
@@ -188,11 +204,13 @@ class MCPScanner:
         )
 
     def scan_file(self, path: str | Path, encoding: str = "utf-8") -> MCPScanResult:
-        """Scan an MCP manifest JSON file."""
+        """Scan an MCP manifest JSON file or a JSONL tool listing (one tool per line)."""
         p = Path(path)
         self._log(f"  Scanning {p.name}...")
         try:
             text = p.read_text(encoding=encoding, errors="replace")
+            if p.suffix.lower() == ".jsonl":
+                return self.scan_tool_list(_parse_jsonl_tools(text), name=p.name)
             manifest = json.loads(text)
         except json.JSONDecodeError as e:
             return MCPScanResult(
