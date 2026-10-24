@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -383,3 +384,28 @@ class TestMCPScanner:
         line = result.summary_line()
         assert "SAFE" in line
         assert "test" in line
+
+
+# ── CLI directory scan ─────────────────────────────
+
+
+class TestCLIDirectoryScan:
+    def _scan_dir_json(self, path, capsys):
+        from mcpscan.cli import cmd_scan
+
+        args = argparse.Namespace(target=str(path), format="json", verbose=False)
+        cmd_scan(args)
+        return json.loads(capsys.readouterr().out)
+
+    def test_top_level_manifest_scanned_once(self, tmp_path, capsys):
+        (tmp_path / "manifest.json").write_text(json.dumps(CLEAN_MANIFEST))
+        report = self._scan_dir_json(tmp_path, capsys)
+        assert report["total"] == 1
+
+    def test_nested_json_files_are_scanned(self, tmp_path, capsys):
+        nested = tmp_path / "servers" / "search"
+        nested.mkdir(parents=True)
+        (tmp_path / "manifest.json").write_text(json.dumps(CLEAN_MANIFEST))
+        (nested / "server.json").write_text(json.dumps(CLEAN_MANIFEST))
+        report = self._scan_dir_json(tmp_path, capsys)
+        assert sorted(r["server"] for r in report["results"]) == ["manifest.json", "server.json"]
