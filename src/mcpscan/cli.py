@@ -56,6 +56,10 @@ def _print_result(result, verbose: bool = False) -> None:
     print()
 
 
+# Risk levels that make `mcpscan scan` exit 1, for a file or a directory.
+_FAILING_LEVELS = ("CRITICAL", "HIGH")
+
+
 def cmd_scan(args) -> int:
     from mcpscan import MCPScanner
 
@@ -102,7 +106,7 @@ def cmd_scan(args) -> int:
             )
         else:
             print(report.summary())
-        return 1 if report.critical_count > 0 else 0
+        return 1 if any(r.risk_level in _FAILING_LEVELS for r in report.results) else 0
 
     result = scanner.scan_file(path)
 
@@ -132,7 +136,7 @@ def cmd_scan(args) -> int:
     else:
         _print_result(result, verbose=args.verbose)
 
-    return 1 if result.risk_level in ("CRITICAL", "HIGH") else 0
+    return 1 if result.risk_level in _FAILING_LEVELS else 0
 
 
 def cmd_rules(args) -> None:
