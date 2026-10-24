@@ -210,11 +210,20 @@ class PathTraversalRule(MCPRule):
             if not is_fs_tool:
                 continue
 
-            # Check if path parameter has no restrictions
-            if "path" in schema.lower() and "pattern" not in schema.lower():
-                findings.append(
-                    f"Tool '{tool.get('name','?')}': path parameter has no pattern restriction"
-                )
+            # Check each path-like parameter for its own restriction, so a pattern
+            # on an unrelated field (e.g. encoding) cannot hide an open path field
+            input_schema = tool.get("inputSchema")
+            properties = input_schema.get("properties") if isinstance(input_schema, dict) else None
+            if isinstance(properties, dict):
+                for prop_name, prop in properties.items():
+                    if "path" not in prop_name.lower():
+                        continue
+                    if isinstance(prop, dict) and ("pattern" in prop or "enum" in prop):
+                        continue
+                    findings.append(
+                        f"Tool '{tool.get('name','?')}': path parameter '{prop_name}' "
+                        "has no pattern restriction"
+                    )
             for pat in self._PATTERNS:
                 if pat.search(text):
                     findings.append(f"Tool '{tool.get('name','?')}': potential path traversal")
