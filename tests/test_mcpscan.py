@@ -215,6 +215,40 @@ class TestPathTraversalRule:
         # Should not flag path traversal when pattern is present
         assert not any("no pattern restriction" in f for f in findings)
 
+    def test_pattern_on_other_field_does_not_hide_open_path(self):
+        m = {
+            "tools": [
+                {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "encoding": {"type": "string", "pattern": "^utf-8$"},
+                        },
+                    },
+                }
+            ]
+        }
+        findings = RULE_PATH_TRAVERSAL.check(m)
+        assert any("'path' has no pattern restriction" in f for f in findings)
+
+    def test_path_with_enum_ok(self):
+        m = {
+            "tools": [
+                {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "inputSchema": {
+                        "properties": {"path": {"type": "string", "enum": ["/srv/a", "/srv/b"]}}
+                    },
+                }
+            ]
+        }
+        findings = RULE_PATH_TRAVERSAL.check(m)
+        assert not any("no pattern restriction" in f for f in findings)
+
 
 class TestSuspiciousToolNameRule:
     def test_detects_exfil(self):
