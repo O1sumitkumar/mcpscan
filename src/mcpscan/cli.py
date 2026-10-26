@@ -67,7 +67,9 @@ def cmd_scan(args) -> int:
         return 2
 
     if path.is_dir():
-        paths = list(path.glob("*.json")) + list(path.glob("**/*manifest*.json"))
+        # One recursive match covers both top-level and nested manifests; the set
+        # keeps a file from being scanned twice and sorting keeps output stable.
+        paths = sorted(set(path.rglob("*.json")))
         report = scanner.scan_files(paths)
         if args.format == "json":
             print(
