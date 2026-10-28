@@ -118,18 +118,35 @@ class MCPBatchReport:
         return "\n".join(lines)
 
 
+# Lowest risk level a single finding of each severity can produce.
+_SEVERITY_FLOOR = {
+    Severity.CRITICAL: "CRITICAL",
+    Severity.HIGH: "HIGH",
+    Severity.MEDIUM: "MEDIUM",
+    Severity.LOW: "LOW",
+    Severity.INFO: "LOW",
+}
+_LEVEL_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+
+
 def _compute_risk(findings: list[MCPFinding]) -> tuple[float, str]:
     if not findings:
         return 0.0, "SAFE"
     raw = sum(_SEVERITY_WEIGHTS.get(f.severity, 1) for f in findings)
     score = min(100.0, float(raw))
-    if any(f.severity == Severity.CRITICAL for f in findings):
-        return score, "CRITICAL"
     if score >= 40:
-        return score, "HIGH"
-    if score >= 20:
-        return score, "MEDIUM"
-    return score, "LOW"
+        level = "HIGH"
+    elif score >= 20:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+    # The level is never lower than the worst single finding, so one HIGH
+    # finding is reported as HIGH even when the summed score is below 40.
+    for f in findings:
+        floor = _SEVERITY_FLOOR.get(f.severity, "LOW")
+        if _LEVEL_ORDER.index(floor) > _LEVEL_ORDER.index(level):
+            level = floor
+    return score, level
 
 
 def _parse_jsonl_tools(text: str) -> list[dict[str, Any]]:

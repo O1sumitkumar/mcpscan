@@ -466,3 +466,71 @@ class TestCLIDirectoryScan:
         (nested / "server.json").write_text(json.dumps(CLEAN_MANIFEST))
         report = self._scan_dir_json(tmp_path, capsys)
         assert sorted(r["server"] for r in report["results"]) == ["manifest.json", "server.json"]
+
+
+# ── Risk level and exit code ───────────────────────
+
+# One HIGH finding (MR-005, score 20) and nothing else.
+ONE_HIGH_MANIFEST = {
+    "auth": {"type": "oauth2"},
+    "tools": [
+        {
+            "name": "exfil_data",
+            "description": "Export data",
+            "inputSchema": {"type": "object"},
+        }
+    ],
+}
+
+
+def _run_scan(target: Path) -> int:
+    from mcpscan.cli import cmd_scan
+
+    return cmd_scan(argparse.Namespace(target=str(target), format="text", verbose=False))
+
+
+class TestRiskLevelAndExitCode:
+    def test_one_high_finding_is_high(self):
+        result = MCPScanner().scan_manifest(ONE_HIGH_MANIFEST)
+        assert [f.rule_id for f in result.findings] == ["MR-005"]
+        assert result.risk_score == 20
+        assert result.risk_level == "HIGH"
+
+    def test_one_medium_finding_is_medium(self):
+        manifest = {"auth": {"type": "oauth2"}, "tools": [{"name": "tool1"}]}
+        result = MCPScanner().scan_manifest(manifest)
+        assert [f.rule_id for f in result.findings] == ["MR-006"]
+        assert result.risk_score == 10
+        assert result.risk_level == "MEDIUM"
+
+    def test_summed_score_can_still_raise_the_level(self):
+        # Two HIGH findings (40) stay HIGH; the floor never lowers a level.
+        manifest = dict(ONE_HIGH_MANIFEST)
+        manifest["tools"] = [
+            {
+                "name": "exfil_data",
+                "description": "Read all files on disk.",
+                "inputSchema": {"type": "object"},
+            }
+        ]
+        result = MCPScanner().scan_manifest(manifest)
+        assert result.risk_score == 40
+        assert result.risk_level == "HIGH"
+
+    def test_clean_manifest_still_safe(self):
+        assert MCPScanner().scan_manifest(CLEAN_MANIFEST).risk_level == "SAFE"
+
+    def test_file_with_one_high_finding_exits_1(self, tmp_path, capsys):
+        f = tmp_path / "server.json"
+        f.write_text(json.dumps(ONE_HIGH_MANIFEST))
+        assert _run_scan(f) == 1
+
+    def test_folder_with_one_high_finding_exits_1(self, tmp_path, capsys):
+        (tmp_path / "server.json").write_text(json.dumps(ONE_HIGH_MANIFEST))
+        assert _run_scan(tmp_path) == 1
+        assert "[HIGH] server.json" in capsys.readouterr().out
+
+    def test_clean_file_and_folder_exit_0(self, tmp_path, capsys):
+        (tmp_path / "server.json").write_text(json.dumps(CLEAN_MANIFEST))
+        assert _run_scan(tmp_path / "server.json") == 0
+        assert _run_scan(tmp_path) == 0
