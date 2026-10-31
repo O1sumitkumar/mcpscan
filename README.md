@@ -165,6 +165,7 @@ mcpscan scans tool schemas for these patterns before they reach your agent.
 ```
 
 mcpscan exits with code `1` on CRITICAL or HIGH findings — use it to block CI pipelines.
+It exits with code `2` when a file could not be scanned (invalid JSON, a manifest that is not an object with a `tools` list, or a rule that failed), so a broken manifest never passes as clean.
 
 ---
 
