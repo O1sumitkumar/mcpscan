@@ -60,6 +60,13 @@ def _print_result(result, verbose: bool = False) -> None:
 _FAILING_LEVELS = ("CRITICAL", "HIGH")
 
 
+def _exit_code(results) -> int:
+    """2 if any scan could not finish (ERROR), 1 for a failing level, else 0."""
+    if any(r.risk_level == "ERROR" for r in results):
+        return 2
+    return 1 if any(r.risk_level in _FAILING_LEVELS for r in results) else 0
+
+
 def cmd_scan(args) -> int:
     from mcpscan import MCPScanner
 
@@ -106,7 +113,7 @@ def cmd_scan(args) -> int:
             )
         else:
             print(report.summary())
-        return 1 if any(r.risk_level in _FAILING_LEVELS for r in report.results) else 0
+        return _exit_code(report.results)
 
     result = scanner.scan_file(path)
 
@@ -136,7 +143,7 @@ def cmd_scan(args) -> int:
     else:
         _print_result(result, verbose=args.verbose)
 
-    return 1 if result.risk_level in _FAILING_LEVELS else 0
+    return _exit_code([result])
 
 
 def cmd_rules(args) -> None:

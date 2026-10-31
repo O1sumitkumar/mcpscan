@@ -165,6 +165,39 @@ def _parse_jsonl_tools(text: str) -> list[dict[str, Any]]:
     return tools
 
 
+def _manifest_shape_error(manifest: Any) -> str:
+    """Return a message if the manifest is not an object with a list of tool objects."""
+    if not isinstance(manifest, dict):
+        return (
+            "Invalid manifest: expected a JSON object with a 'tools' list, "
+            f"got {_json_type(manifest)}"
+        )
+    tools = manifest.get("tools", [])
+    if not isinstance(tools, list):
+        return f"Invalid manifest: 'tools' must be a list, got {_json_type(tools)}"
+    for i, tool in enumerate(tools):
+        if not isinstance(tool, dict):
+            return f"Invalid manifest: tools[{i}] must be an object, got {_json_type(tool)}"
+    return ""
+
+
+def _json_type(value: Any) -> str:
+    """Name a parsed JSON value the way JSON calls it."""
+    if isinstance(value, dict):
+        return "an object"
+    if isinstance(value, list):
+        return "a list"
+    if isinstance(value, str):
+        return "a string"
+    if isinstance(value, bool):
+        return "a boolean"
+    if isinstance(value, (int, float)):
+        return "a number"
+    if value is None:
+        return "null"
+    return type(value).__name__
+
+
 class MCPScanner:
     """
     Scan MCP server manifests for security vulnerabilities.
@@ -197,19 +230,38 @@ class MCPScanner:
         self.verbose = verbose
 
     def scan_manifest(self, manifest: dict[str, Any], name: str = "server") -> MCPScanResult:
-        """Scan a parsed MCP manifest dict."""
+        """Scan a parsed MCP manifest dict.
+
+        A manifest that is not an object with a ``tools`` list, or a rule that
+        raises, gives an ERROR result instead of a silently incomplete scan.
+        """
         t0 = time.time()
+        shape_error = _manifest_shape_error(manifest)
+        if shape_error:
+            return MCPScanResult(
+                server_name=name,
+                findings=[],
+                risk_score=0.0,
+                risk_level="ERROR",
+                scan_time_ms=round((time.time() - t0) * 1000, 2),
+                error=shape_error,
+            )
+
         findings: list[MCPFinding] = []
+        rule_errors: list[str] = []
 
         for rule in self.rules:
             try:
                 snippets = rule.check(manifest)
-            except Exception:
-                snippets = []
+            except Exception as e:
+                rule_errors.append(f"{rule.id} failed: {type(e).__name__}: {e}")
+                continue
             if snippets:
                 findings.append(MCPFinding(rule=rule, snippets=snippets))
 
         score, level = _compute_risk(findings)
+        if rule_errors:
+            level = "ERROR"
         return MCPScanResult(
             server_name=name,
             findings=findings,
@@ -217,6 +269,7 @@ class MCPScanner:
             risk_level=level,
             tool_count=len(manifest.get("tools", [])),
             scan_time_ms=round((time.time() - t0) * 1000, 2),
+            error="; ".join(rule_errors),
             raw=manifest,
         )
 
